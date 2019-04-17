@@ -1,6 +1,7 @@
 import multiprocessing
 import multiprocessing.dummy
 import itertools
+import signal
 from collections.abc import Iterable, Iterator
 from typing import TypeVar, Union, Iterable as IterableType, Iterator as IteratorType, Any, List, Optional, Callable
 
@@ -8,6 +9,9 @@ from typing import TypeVar, Union, Iterable as IterableType, Iterator as Iterato
 T = TypeVar('T')
 U = TypeVar('U')
 
+
+def _init_worker():
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 def nats() -> IteratorType[int]:
     num = 1
@@ -21,21 +25,30 @@ def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IterableType[U]:
         yield fn(item)
 
 
+def _base_parmap(pool, iterable: IterableType[T], fn: Callable[[T], U], chunksize: int) -> IterableType[U]:
+    try:
+        yield from pool.imap(fn, iterable, chunksize)
+    except (KeyboardInterrupt, Exception) as e:
+        pool.terminate()
+        raise e
+    finally:
+        pool.join()
+
 def parmap_multiprocessing_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
-    pool = multiprocessing.Pool(n_cpus)
-    yield from pool.imap(fn, iterable, chunksize)
+    pool = multiprocessing.Pool(n_cpus, _init_worker)
+    yield from _base_parmap(pool, iterable, fn, chunksize)
 
 
 def parmap_threading_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
     pool = multiprocessing.dummy.Pool(n_cpus)
-    yield from pool.imap(fn, iterable, chunksize)
+    yield from _base_parmap(pool, iterable, fn, chunksize)
 
 
 def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
     from multiprocess.pool import Pool
 
-    pool = Pool(n_cpus)
-    yield from pool.imap(fn, iterable, chunksize)
+    pool = Pool(n_cpus, _init_worker)
+    yield from _base_parmap(pool, iterable, fn, chunksize)
 
 
 def flatten_fn(iterable: IterableType[Union[IterableType, Any]]) -> IterableType[Any]:
@@ -185,11 +198,10 @@ class FuncObj:
         self.args = args
 
 def sq(a):
-    # time.sleep(2)
     return a ** 2
 
 if __name__ == '__main__':
-    negsq = laziter([1, 2, [3, [4, range(1000000), 69]]], mp_backend='python')\
+    negsq = laziter([1, 2, [3, [4, range(1000000), 69]]])\
         .flatten().drop(8888)\
         .parmap(sq)\
         .filter(lambda a: a % 2 == 0)\
