@@ -1,10 +1,7 @@
 import multiprocessing
 import itertools
-import time
-
-from functools import partial
 from collections.abc import Iterable, Iterator
-from typing import TypeVar, Union, Iterable as IterableType, Iterator as IteratorType, Any, List, Callable
+from typing import TypeVar, Union, Iterable as IterableType, Iterator as IteratorType, Any, List, Optional, Callable
 
 
 T = TypeVar('T')
@@ -18,43 +15,43 @@ def nats() -> IteratorType[int]:
         num += 1
 
 
-def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IteratorType[U]:
+def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IterableType[U]:
     for item in iterable:
         yield fn(item)
 
 
-def parmap_python_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int) -> IterableType[U]:
+def parmap_python_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
     pool = multiprocessing.Pool(n_cpus)
-    yield from pool.imap(fn, iterable)
+    yield from pool.imap(fn, iterable, chunksize)
 
 
-def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int) -> IteratorType[U]:
+def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
     from multiprocess.pool import Pool
 
     pool = Pool(n_cpus)
-    yield from pool.imap(fn, iterable)
+    yield from pool.imap(fn, iterable, chunksize)
 
 
-def flatten_fn(iterable: IterableType[Union[IterableType, Any]]) -> IteratorType[Any]:
+def flatten_fn(iterable: IterableType[Union[IterableType, Any]]) -> IterableType[Any]:
     for item in iterable:
-        if isinstance(item, Iterable):
+        if isinstance(item, Iterable) and not isinstance(item, str):
             yield from flatten_fn(item)
         else:
             yield item
 
 
-def take_fn(iterable: IterableType[T], n: int) -> IteratorType[T]:
+def take_fn(iterable: IterableType[T], n: int) -> IterableType[T]:
     for _ in range(n):
         yield next(iterable)
 
 
-def drop_fn(iterable: IterableType[T], n: int):
+def drop_fn(iterable: IterableType[T], n: int) -> IterableType[T]:
     for _ in range(n):
         next(iterable)
     yield from iterable
 
 
-def filter_fn(iterable: IterableType[T], fn: Callable[[T], bool]) -> IteratorType[T]:
+def filter_fn(iterable: IterableType[T], fn: Callable[[T], bool]) -> IterableType[T]:
     for item in iterable:
         if fn(item):
             yield item
@@ -67,10 +64,10 @@ mp_backends = {
 
 
 class laziter:
-    def __init__(self, iterable_or_list: Union[IterableType, List], mp_backend='python'):
+    def __init__(self, iterable_or_list: Union[IterableType, List], mp_backend: str = 'python'):
         self._base_iter = iterable_or_list
         self._mp_backend = mp_backend
-        self._history = []
+        self._history: List[FuncObj] = []
 
         assert mp_backend in mp_backends
 
@@ -80,36 +77,68 @@ class laziter:
 
         return iter(self._base_iter)
 
-    def _with_computation(self, fn, *args) -> 'laziter':
+    def _with_computation(self, fn: Callable, *args: Any) -> 'laziter':
         new_laziter = laziter(self._get_base_iterator())
         new_laziter._history = [*self._history, FuncObj(fn, *args)]
         return new_laziter
 
     def map(self, fn: Callable[[T], U]) -> 'laziter':
+        """
+        Performs a standard map
+        :param fn: The function to map over the iterable
+        """
         return self._with_computation(map_fn, fn)
 
     def filter(self, fn: Callable[[T], bool]) -> 'laziter':
+        """
+        Given a predicate, filters the collection
+        :param fn: A function that takes the item and returns a boolean
+        """
         return self._with_computation(filter_fn, fn)
 
     def take(self, n: int) -> 'laziter':
+        """
+        Takes n items from the collection
+        :param n: The number of items
+        :return: Returns a new instance of 'laziter' with n items
+        """
         return self._with_computation(take_fn, n)
 
     def drop(self, n: int) -> 'laziter':
+        """
+        Ignores n items in the collection
+        :param n: The number of items
+        :return: A new instance of 'laziter' with n items skipped
+        """
         return self._with_computation(drop_fn, n)
 
     def flatten(self) -> 'laziter':
+        """
+        Fully flattens the iterator.
+        Gives special treatment for strings, which are not flattened.
+        :return: An instance of 'laziter' with any nested iterables flattened out
+        """
         return self._with_computation(flatten_fn)
 
-    def parmap(self, fn: Callable[[T], U], n_cpus=multiprocessing.cpu_count()) -> 'laziter':
-        return self._with_computation(mp_backends[self._mp_backend], fn, n_cpus)
+    def parmap(self, fn: Callable[[T], U], n_cpus: int = multiprocessing.cpu_count(), chunksize: int = 1) -> 'laziter':
+        """
+        Performs a map that uses either Python multiprocessing or Pathos multiprocess for parallelisation.
+        :param fn: Mapper function
+        :param n_cpus: Number of processes to use. Defaults to `cpu_count()`
+        :return: An instance of 'laziter' with the parallel map applied
+        """
+        return self._with_computation(mp_backends[self._mp_backend], fn, n_cpus, chunksize)
 
     def __iter__(self):
+        """
+        Gets the iterator for this instance and applies all specified computations
+        :return: The iterator for the computed collection
+        """
         iterable = self._get_base_iterator()
         for funcobj in self._history:
             iterable = funcobj.function(iterable, *funcobj.args)
 
         return iterable
-        # return iter(iterable) if isinstance(iterable, Iterable) else iterable
 
     def __getitem__(self, item):
         if isinstance(item, slice):
@@ -120,7 +149,13 @@ class laziter:
                 next(iterable)
             return next(iterable)
 
-    def reduce(self, fn: Callable[[T, U], U], initial: Union[U, None] = None) -> U:
+    def reduce(self, fn: Callable[[T, U], U], initial: Optional[U] = None) -> U:
+        """
+        Performs a left-to-right fold on the collection.
+        :param fn: The reduction function fn(item: T, accumulator: U) -> U
+        :param initial: The initial accumulator. If `None`, uses the first value in the computed collection
+        :return: The result of reduction
+        """
         iterable = iter(self)
         accumulator = initial or next(iterable)
         for item in iterable:
@@ -129,12 +164,17 @@ class laziter:
         return accumulator
 
     def compute(self) -> 'laziter':
+        """
+        Forces a computation and caches it.
+        Any subsequent computation will continue from the current state.
+        :return: An instance of 'laziter' with the computed value cached
+        """
         self._base_iter = list(self)
         self._history = []
         return self
 
 class FuncObj:
-    def __init__(self, fn, *args):
+    def __init__(self, fn: Callable, *args: Any):
         self.function = fn
         self.args = args
 
