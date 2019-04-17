@@ -71,12 +71,9 @@ mp_backends = {
 
 
 class laziter:
-    def __init__(self, iterable_or_list: Union[IterableType, List], mp_backend: str = 'multiprocessing'):
+    def __init__(self, iterable_or_list: Union[IterableType, List]):
         self._base_iter = iterable_or_list
-        self._mp_backend = mp_backend
         self._history: List[FuncObj] = []
-
-        assert mp_backend in mp_backends, f'mp_backend "{mp_backend}" not in {list(mp_backends.values())}'
 
     def _get_base_iterator(self):
         if isinstance(self._base_iter, Iterator):
@@ -127,14 +124,16 @@ class laziter:
         """
         return self._with_computation(flatten_fn)
 
-    def parmap(self, fn: Callable[[T], U], n_cpus: int = multiprocessing.cpu_count(), chunksize: int = 1) -> 'laziter':
+    def parmap(self, fn: Callable[[T], U], n_cpus: int = multiprocessing.cpu_count(), chunksize: int = 1, mp_backend: str = 'multiprocessing') -> 'laziter':
         """
         Performs a map that uses either Python multiprocessing or Pathos multiprocess for parallelisation.
         :param fn: Mapper function
         :param n_cpus: Number of processes to use. Defaults to `cpu_count()`
         :return: An instance of 'laziter' with the parallel map applied
         """
-        return self._with_computation(mp_backends[self._mp_backend], fn, n_cpus, chunksize)
+        assert mp_backend in mp_backends, f'mp_backend "{mp_backend}" not in {list(mp_backends.values())}'
+
+        return self._with_computation(mp_backends[mp_backend], fn, n_cpus, chunksize)
 
     def __iter__(self):
         """
