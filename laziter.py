@@ -1,4 +1,5 @@
 import multiprocessing
+import multiprocessing.dummy
 import itertools
 from collections.abc import Iterable, Iterator
 from typing import TypeVar, Union, Iterable as IterableType, Iterator as IteratorType, Any, List, Optional, Callable
@@ -20,8 +21,13 @@ def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IterableType[U]:
         yield fn(item)
 
 
-def parmap_python_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
+def parmap_multiprocessing_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
     pool = multiprocessing.Pool(n_cpus)
+    yield from pool.imap(fn, iterable, chunksize)
+
+
+def parmap_threading_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
+    pool = multiprocessing.dummy.Pool(n_cpus)
     yield from pool.imap(fn, iterable, chunksize)
 
 
@@ -58,13 +64,14 @@ def filter_fn(iterable: IterableType[T], fn: Callable[[T], bool]) -> IterableTyp
 
 
 mp_backends = {
-    'python': parmap_python_fn,
+    'multiprocessing': parmap_multiprocessing_fn,
     'pathos': parmap_pathos_fn,
+    'threading': parmap_threading_fn,
 }
 
 
 class laziter:
-    def __init__(self, iterable_or_list: Union[IterableType, List], mp_backend: str = 'python'):
+    def __init__(self, iterable_or_list: Union[IterableType, List], mp_backend: str = 'multiprocessing'):
         self._base_iter = iterable_or_list
         self._mp_backend = mp_backend
         self._history: List[FuncObj] = []
