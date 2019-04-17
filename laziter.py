@@ -76,7 +76,7 @@ class laziter:
         self._mp_backend = mp_backend
         self._history: List[FuncObj] = []
 
-        assert mp_backend in mp_backends
+        assert mp_backend in mp_backends, f'mp_backend "{mp_backend}" not in {list(mp_backends.values())}'
 
     def _get_base_iterator(self):
         if isinstance(self._base_iter, Iterator):
