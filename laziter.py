@@ -28,6 +28,7 @@ def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IterableType[U]:
 def _base_parmap(pool, iterable: IterableType[T], fn: Callable[[T], U], chunksize: int) -> IterableType[U]:
     try:
         yield from pool.imap(fn, iterable, chunksize)
+        pool.close()
     except (KeyboardInterrupt, Exception) as e:
         pool.terminate()
         raise e
@@ -84,7 +85,7 @@ mp_backends = {
 
 
 class laziter:
-    def __init__(self, iterable_or_list: Union[IterableType, List]):
+    def __init__(self, iterable_or_list: Union[IterableType[Any], List[Any]]):
         self._base_iter = iterable_or_list
         self._history: List[FuncObj] = []
 
@@ -102,6 +103,7 @@ class laziter:
     def map(self, fn: Callable[[T], U]) -> 'laziter':
         """
         Performs a standard map
+
         :param fn: The function to map over the iterable
         """
         return self._with_computation(map_fn, fn)
@@ -109,6 +111,7 @@ class laziter:
     def filter(self, fn: Callable[[T], bool]) -> 'laziter':
         """
         Given a predicate, filters the collection
+
         :param fn: A function that takes the item and returns a boolean
         """
         return self._with_computation(filter_fn, fn)
@@ -116,6 +119,7 @@ class laziter:
     def take(self, n: int) -> 'laziter':
         """
         Takes n items from the collection
+
         :param n: The number of items
         :return: Returns a new instance of 'laziter' with n items
         """
@@ -124,6 +128,7 @@ class laziter:
     def drop(self, n: int) -> 'laziter':
         """
         Ignores n items in the collection
+
         :param n: The number of items
         :return: A new instance of 'laziter' with n items skipped
         """
@@ -133,24 +138,34 @@ class laziter:
         """
         Fully flattens the iterator.
         Gives special treatment for strings, which are not flattened.
+
         :return: An instance of 'laziter' with any nested iterables flattened out
         """
         return self._with_computation(flatten_fn)
 
-    def parmap(self, fn: Callable[[T], U], n_cpus: int = multiprocessing.cpu_count(), chunksize: int = 1, mp_backend: str = 'multiprocessing') -> 'laziter':
+    def parmap(self, fn: Callable[[T], U], n_cpus: int = -1, chunksize: int = 1, mp_backend: str = 'multiprocessing') -> 'laziter':
         """
-        Performs a map that uses either Python multiprocessing or Pathos multiprocess for parallelisation.
+        Performs a map with one of 3 mappers:
+            ``multiprocessing``: The default Python multiprocessing pool
+
+            ``pathos``: Uses Pathos multiprocesses, which allows lambda functions
+
+            ``threading``: Uses Python threads, which are subject to the GIL but works well for IO-bound tasks
+
         :param fn: Mapper function
         :param n_cpus: Number of processes to use. Defaults to `cpu_count()`
         :return: An instance of 'laziter' with the parallel map applied
         """
         assert mp_backend in mp_backends, f'mp_backend "{mp_backend}" not in {list(mp_backends.values())}'
 
+        n_cpus = multiprocessing.cpu_count() if n_cpus < 0 else n_cpus
+
         return self._with_computation(mp_backends[mp_backend], fn, n_cpus, chunksize)
 
     def __iter__(self):
         """
         Gets the iterator for this instance and applies all specified computations
+
         :return: The iterator for the computed collection
         """
         iterable = self._get_base_iterator()
@@ -171,6 +186,7 @@ class laziter:
     def reduce(self, fn: Callable[[T, U], U], initial: Optional[U] = None) -> U:
         """
         Performs a left-to-right fold on the collection.
+
         :param fn: The reduction function fn(item: T, accumulator: U) -> U
         :param initial: The initial accumulator. If `None`, uses the first value in the computed collection
         :return: The result of reduction
@@ -186,6 +202,7 @@ class laziter:
         """
         Forces a computation and caches it.
         Any subsequent computation will continue from the current state.
+
         :return: An instance of 'laziter' with the computed value cached
         """
         self._base_iter = list(self)
