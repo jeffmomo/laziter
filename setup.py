@@ -7,7 +7,7 @@ setup(
     author='Jeff Mo',
     description='A lazy iterator wrapper with multiprocessing powers!',
     long_description=(Path(__file__).parent/'README.md').open('r').read(),
-    version='0.0.6',
+    version='0.1.0',
     py_modules=['laziter'],
     classifiers=[
         "Programming Language :: Python :: 3",
