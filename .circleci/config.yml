@@ -51,11 +51,6 @@ jobs:
             . venv/bin/activate
             pytest .
 
-      - persist_to_workspace:
-        root: /tmp/workspace
-        paths:
-          - "."
-
   build_and_upload:
     docker:
       # specify the version you desire here
@@ -68,8 +63,20 @@ jobs:
       # - image: circleci/postgres:9.4
 
     steps:
-      - attach_workspace:
-          at: /tmp/workspace
+      - checkout
+      # Download and cache dependencies
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "requirements-dev.txt" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
+
+      - run:
+          name: install dependencies
+          command: |
+            python3 -m venv venv
+            . venv/bin/activate
+
       - run:
           name: build artifacts
           command: |
@@ -81,8 +88,8 @@ jobs:
       - run:
           name: upload artifacts
           command: |
-              . venv/bin/activate
-              twine upload dist/*
+            . venv/bin/activate
+            twine upload dist/*
 
 workflows:
   version: 2
