@@ -73,10 +73,10 @@ jobs:
             twine check "dist/*"
 
       - run:
-        name: upload artifacts
-        command: |
-            . venv/bin/activate
-            twine upload dist/*
+          name: upload artifacts
+          command: |
+              . venv/bin/activate
+              twine upload dist/*
 
 workflows:
   version: 2
