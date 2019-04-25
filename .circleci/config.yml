@@ -51,6 +51,11 @@ jobs:
             . venv/bin/activate
             pytest .
 
+      - persist_to_workspace:
+        root: /tmp/workspace
+        paths:
+          - .
+
   build_and_upload:
     docker:
       # specify the version you desire here
