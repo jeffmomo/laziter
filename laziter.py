@@ -2,6 +2,7 @@ import multiprocessing
 import multiprocessing.dummy
 import itertools
 import signal
+import sys
 from collections.abc import Iterable, Iterator
 from typing import TypeVar, Union, Iterable as IterableType, Iterator as IteratorType, Any, List, Optional, Callable
 
@@ -40,7 +41,10 @@ def parmap_threading_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus:
 
 
 def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: Optional[int], chunksize: int) -> IterableType[U]:
-    from multiprocess.pool import Pool
+    try:
+        from multiprocess.pool import Pool
+    except ImportError:
+        print('To use the `pathos` backend, the `multiprocess` package must first be installed', file=sys.stderr)
 
     pool = Pool(n_cpus, _init_worker)
     yield from _base_parmap(pool, iterable, fn, chunksize)
