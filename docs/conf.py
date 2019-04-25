@@ -15,6 +15,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
+print(os.listdir(str(Path(__file__).parent)))
 from laziter import laziter
 
 # -- Project information -----------------------------------------------------
