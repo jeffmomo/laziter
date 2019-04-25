@@ -1,3 +1,4 @@
 pytest==3.6.0
 twine
 multiprocess==0.70.7
+sphinx==2.0.0

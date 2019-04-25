@@ -13,7 +13,8 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../../'))
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent))
 from laziter import laziter
 
 # -- Project information -----------------------------------------------------
