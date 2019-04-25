@@ -18,8 +18,8 @@ jobs:
     steps:
       - attach_workspace:
           at: /tmp/workspace
-      - checkout
 
+      - checkout
       # Download and cache dependencies
       - restore_cache:
           keys:
@@ -68,6 +68,7 @@ jobs:
       - run:
           name: build artifacts
           command: |
+            ls -lah
             . venv/bin/activate
             python setup.py sdist bdist_wheel
             twine check "dist/*"
