@@ -4,7 +4,7 @@
 #
 version: 2
 jobs:
-  build:
+  test:
     docker:
       # specify the version you desire here
       # use `-browsers` prefix for selenium tests, e.g. `3.6.1-browsers`
@@ -77,3 +77,18 @@ jobs:
         command: |
             . venv/bin/activate
             twine upload dist/*
+
+workflows:
+  version: 2
+  test-and-approve-and-upload:
+    jobs:
+      - test  # your custom job from your config, that builds your code
+      - hold: # <<< A job that will require manual approval in the CircleCI web application.
+          type: approval # <<< This key-value pair will set your workflow to a status of "On Hold"
+          requires: # We only run the "hold" job when test2 has succeeded
+           - test
+      # On approval of the `hold` job, any successive job that requires the `hold` job will run. 
+      # In this case, a user is manually triggering the deploy job.
+      - build_and_upload:
+          requires:
+            - hold
