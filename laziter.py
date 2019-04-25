@@ -13,39 +13,33 @@ U = TypeVar('U')
 def _init_worker():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-def nats() -> IteratorType[int]:
-    num = 1
-    while True:
-        yield num
-        num += 1
-
 
 def map_fn(iterable: IterableType[T], fn: Callable[[T], U]) -> IterableType[U]:
     for item in iterable:
         yield fn(item)
 
 
-def _base_parmap(pool, iterable: IterableType[T], fn: Callable[[T], U], chunksize: int) -> IterableType[U]:
+def _base_parmap(pool: multiprocessing.Pool, iterable: IterableType[T], fn: Callable[[T], U], chunksize: int) -> IterableType[U]:
     try:
         yield from pool.imap(fn, iterable, chunksize)
-        pool.close()
     except (KeyboardInterrupt, Exception) as e:
         pool.terminate()
         raise e
     finally:
+        pool.close()
         pool.join()
 
-def parmap_multiprocessing_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
+def parmap_multiprocessing_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: Optional[int], chunksize: int) -> IterableType[U]:
     pool = multiprocessing.Pool(n_cpus, _init_worker)
     yield from _base_parmap(pool, iterable, fn, chunksize)
 
 
-def parmap_threading_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
+def parmap_threading_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: Optional[int], chunksize: int) -> IterableType[U]:
     pool = multiprocessing.dummy.Pool(n_cpus)
     yield from _base_parmap(pool, iterable, fn, chunksize)
 
 
-def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: int, chunksize: int) -> IterableType[U]:
+def parmap_pathos_fn(iterable: IterableType[T], fn: Callable[[T], U], n_cpus: Optional[int], chunksize: int) -> IterableType[U]:
     from multiprocess.pool import Pool
 
     pool = Pool(n_cpus, _init_worker)
@@ -96,7 +90,7 @@ class laziter:
         return iter(self._base_iter)
 
     def _with_computation(self, fn: Callable, *args: Any) -> 'laziter':
-        new_laziter = laziter(self._get_base_iterator())
+        new_laziter = laziter(self._base_iter)
         new_laziter._history = [*self._history, FuncObj(fn, *args)]
         return new_laziter
 
@@ -143,7 +137,7 @@ class laziter:
         """
         return self._with_computation(flatten_fn)
 
-    def parmap(self, fn: Callable[[T], U], n_cpus: int = -1, chunksize: int = 1, mp_backend: str = 'multiprocessing') -> 'laziter':
+    def parmap(self, fn: Callable[[T], U], n_cpus: Optional[int] = None, chunksize: int = 1, mp_backend: str = 'multiprocessing') -> 'laziter':
         """
         Performs a map with one of 3 mappers:
             ``multiprocessing``: The default Python multiprocessing pool
@@ -157,8 +151,6 @@ class laziter:
         :return: An instance of 'laziter' with the parallel map applied
         """
         assert mp_backend in mp_backends, f'mp_backend "{mp_backend}" not in {list(mp_backends.values())}'
-
-        n_cpus = multiprocessing.cpu_count() if n_cpus < 0 else n_cpus
 
         return self._with_computation(mp_backends[mp_backend], fn, n_cpus, chunksize)
 
@@ -214,21 +206,3 @@ class FuncObj:
         self.function = fn
         self.args = args
 
-def sq(a):
-    return a ** 2
-
-if __name__ == '__main__':
-    negsq = laziter([1, 2, [3, [4, range(1000000), 69]]])\
-        .flatten().drop(8888)\
-        .parmap(sq)\
-        .filter(lambda a: a % 2 == 0)\
-        .map(lambda a: -a)\
-
-    for i in negsq.take(5):
-        print(i)
-    print(negsq.take(20).reduce(int.__add__))
-
-
-    print(sum(negsq.take(50)))
-    print(list(negsq))
-    print(1231231, list(negsq[0:10]))
